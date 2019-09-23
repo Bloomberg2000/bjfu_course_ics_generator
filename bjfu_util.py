@@ -1,63 +1,101 @@
-import http.client
-import json
-import urllib.parse
+# encoding: utf-8
+import requests
+from bs4 import BeautifulSoup
+import re
 
 
-def get_course_list(stu_code):
-    conn = http.client.HTTPConnection("newjwxt.bjfu.edu.cn")
-    params = "------WebKitFormBoundary7MA4YWxkTrZu0gW\r\n" \
-             "Content-Disposition: form-data; name=\"xnxq01id\"\r\n\r\n" \
-             "2019-2020-1\r\n" \
-             "------WebKitFormBoundary7MA4YWxkTrZu0gW--"
-    headers = {
-        'content-type': "multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW",
-        'Accept': "*/*",
-        'Host': "newjwxt.bjfu.edu.cn",
-        'Accept-Encoding': "gzip, deflate",
-    }
-    conn.request("POST", "/jsxsd/appXsxk/getKb?xs0101id=" + stu_code, params, headers)
-    res = conn.getresponse()
-    data = res.read()
-    return format_course_data(json.loads(data))
+def format_course_data(infomation, course_index, week_day):
+    if infomation.text == '\xa0':
+        return None
+    else:
+        course_list = []
+        index = 0
+        # 每个课程长度为 8
+        # 处理同一表格多课程
+        while index + 8 <= len(infomation):
+            course_list += create_course(infomation.contents[index: index + 8], course_index, week_day)
+            # 课程分隔符长度为2 ['---------------------', <br/>]
+            index += 8 + 2
+        return course_list
 
 
-def format_course_data(class_json):
-    class_list = []
-    for class_data in class_json:
-        class_weeks = class_data['kkzc'].split(',')
-        for week in class_weeks:
-            startWeek = endWeek = 0
-            if '-' in week:
-                week = week.split('-')
-                startWeek = int(week[0])
-                endWeek = int(week[1])
-            else:
-                startWeek = endWeek = int(week)
-            class_info = {
-                "className": class_data['kcmc'],
-                "weekday": int(class_data['kcsj'][0]),
-                "classroom": '未知' if class_data['jsmc'] is None else class_data['jsmc'],
-                "teacherName": '未知' if class_data['jsxm'] is None else class_data['jsxm'],
-                "startTime": get_start_time(class_data['kcsj']),
-                "endTime": get_end_time(class_data['kcsj']),
-                "week": {
-                    "startWeek": startWeek,
-                    "endWeek": endWeek
-                }
+def create_course(information, course_index, weekday):
+    """[
+     0 '计算机网络A(必修)',
+     1 <br/>,
+     2 <font title="老师">曹佳</font>,
+     3 <br/>,
+     4 <font title="周次(节次)">2-4,6-10(周)</font>,
+     5 <br/>,
+     6 <font title="教室">二教306</font>,
+     7 <br/>
+     ]
+    """
+    course_list = []
+    class_weeks = information[4].text.replace('(周)', '').split(",")
+    for week in class_weeks:
+        startWeek = endWeek = 0
+        if '-' in week:
+            week = week.split('-')
+            startWeek = int(week[0])
+            endWeek = int(week[1])
+        else:
+            startWeek = endWeek = int(week)
+        class_dict = {
+            "className": information[0],
+            "weekday": weekday,
+            "classroom": information[6].text,
+            "teacherName": information[2].text,
+            "startTime": get_start_time(course_index),
+            "endTime": get_end_time(course_index),
+            "week": {
+                "startWeek": startWeek,
+                "endWeek": endWeek
             }
-            class_list.append(class_info)
-    return class_list
+        }
+        course_list.append(class_dict)
+    return course_list
 
 
-def get_start_time(course_num):
+def get_course_list(user_id, password):
+    headers = {
+        'Accept': 'text/html, application/xhtml+xml, image/jxr, */*',
+        'Accept-Encoding': 'gzip, deflate',
+        'Accept-Language': 'en-US,en;q=0.8,zh-Hans-CN;q=0.5,zh-Hans;q=0.3',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.79 Safari/537.36 Edge/14.14393',
+        'Connection': 'Keep-Alive',
+    }
+
+    login_url = 'http://newjwxt.bjfu.edu.cn/jsxsd/xk/LoginToXk'
+    kb_url = 'http://newjwxt.bjfu.edu.cn/jsxsd/xskb/xskb_list.do'
+    studentId = user_id
+    password = password
+    result = requests.post(login_url, data={"USERNAME": studentId, "PASSWORD": password}, allow_redirects=False)
+    headers['Cookie'] = result.headers['Set-Cookie']
+
+    all_class = requests.get(kb_url, headers=headers)
+
+    soup = BeautifulSoup(all_class.text, "lxml")
+
+    lesson = soup.find_all(id="kbtable")[0].find_all("tr")
+    lesson_list = []
+    for i in range(1, 8):
+        p = lesson[i].find_all(class_="kbcontent")
+        for day, t in enumerate(p):
+            someLesson = format_course_data(t, i, day + 1)
+            if someLesson is not None:
+                lesson_list += someLesson
+
+    return lesson_list
+
+
+def get_start_time(index):
     # 数据格式：1[03]0405
-    course_num = int(course_num[1] + course_num[2])
-    course_list = ['0800', '0850', '0950', '1040', '1130', '1330', '1420', '1520', '1610', '1830', '1920', '2010']
-    return course_list[course_num - 1]
+    course_list = ['0800', '0950', '1130', '1330', '1520', '1830', '2010']
+    return course_list[index - 1]
 
 
-def get_end_time(course_num):
+def get_end_time(index):
     # 数据格式：10304[05] 1060708[09]
-    course_num = int(course_num[len(course_num) - 2] + course_num[len(course_num) - 1])
-    course_list = ['0845', '0935', '1035', '1125', '1215', '1415', '1505', '1605', '1655', '1915', '2005', '2055']
-    return course_list[course_num - 1]
+    course_list = ['0935', '1125', '1215', '1505', '1655', '2005', '2055']
+    return course_list[index - 1]

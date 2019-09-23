@@ -2,6 +2,7 @@
 import time
 import datetime
 from bjfu_util import get_course_list
+import getpass
 from random import Random
 
 ics_first_day = time.time()
@@ -165,8 +166,9 @@ def basic_setting():
     print("欢迎使用课程表生成工具。")
     # 获取学号
     stu_code = input("请输入北京林业大学学号(如：171001101): ")
+    password = getpass.getpass("请输入教务系统密码: ")
     ics_stu_code = stu_code
-    class_info_list = get_course_list(stu_code)
+    class_info_list = get_course_list(stu_code, password)
 
     # 获取第一周日期
     first_week_date = input("请设置第一周的星期一日期(如：20190902): ")

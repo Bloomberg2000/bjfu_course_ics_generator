@@ -1,0 +1,2 @@
+# bjfu_course_ics_generator
+ 北京林业大学课程表转iCalander

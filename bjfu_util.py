@@ -8,31 +8,30 @@ def format_course_data(infomation, course_index, week_day):
     if infomation.text == '\xa0':
         return None
     else:
-        course_list = []
-        index = 0
-        # 每个课程长度为 8
-        # 处理同一表格多课程
-        while index + 8 <= len(infomation):
-            course_list += create_course(infomation.contents[index: index + 8], course_index, week_day)
-            # 课程分隔符长度为2 ['---------------------', <br/>]
-            index += 8 + 2
-        return course_list
+        course_list = re.sub('-{2,}', " ", infomation.text).split()
+        course_info_list = []
+        for single_course_info in course_list:
+            course_info_list += create_course(single_course_info, course_index, week_day)
+        return course_info_list
 
 
 def create_course(information, course_index, weekday):
-    """[
-     0 '计算机网络A(必修)',
-     1 <br/>,
-     2 <font title="老师">曹佳</font>,
-     3 <br/>,
-     4 <font title="周次(节次)">2-4,6-10(周)</font>,
-     5 <br/>,
-     6 <font title="教室">二教306</font>,
-     7 <br/>
-     ]
     """
+    软件工程A(必修)赵方6-9,12-13,15,17-18(周)二教307
+    """
+    className = re.search('.{0,}\([\u4e00-\u9fa5]{2,}\)', information).group()
+    information = information.replace(className, "")
+    # 什么人教
+    teacherName = re.search("^[\u4e00-\u9fa5]{0,}", information).group()
+    information = information.lstrip(teacherName)
+    # 何时上课
+    courseTimeText = re.search(".{0,}\(周\)", information).group()
+    # 在哪上课
+    classRoom = information.lstrip(courseTimeText)
+    # 具体何时
+    class_weeks = courseTimeText.strip('(周)').split(',')
     course_list = []
-    class_weeks = information[4].text.replace('(周)', '').split(",")
+
     for week in class_weeks:
         startWeek = endWeek = 0
         if '-' in week:
@@ -42,10 +41,10 @@ def create_course(information, course_index, weekday):
         else:
             startWeek = endWeek = int(week)
         class_dict = {
-            "className": information[0],
+            "className": className,
             "weekday": weekday,
-            "classroom": information[6].text,
-            "teacherName": information[2].text,
+            "classroom": classRoom,
+            "teacherName": teacherName,
             "startTime": get_start_time(course_index),
             "endTime": get_end_time(course_index),
             "week": {
